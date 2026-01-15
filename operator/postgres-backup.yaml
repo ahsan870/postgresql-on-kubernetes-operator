@@ -1,0 +1,17 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: customer-postgres
+  namespace: database
+spec:
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://pg-backups/customer
+      s3Credentials:
+        accessKeyId:
+          name: s3-secret
+          key: accessKey
+        secretAccessKey:
+          name: s3-secret
+          key: secretKey
+    retentionPolicy: "30d"

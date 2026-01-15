@@ -1,0 +1,54 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: customer-postgres
+  namespace: database
+spec:
+  # Number of instances (1 primary + 2 replicas)
+  instances: 3
+
+  # PostgreSQL image
+  imageName: ghcr.io/cloudnative-pg/postgresql:15
+
+  # Storage configuration
+  storage:
+    size: 3Ti
+    storageClass: fast-ssd
+
+  # Database bootstrap
+  bootstrap:
+    initdb:
+      database: customer_db
+      owner: postgres
+
+  # Superuser credentials
+  superuserSecret:
+    name: postgres-secret
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: "4"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "32Gi"
+
+  # PostgreSQL settings
+  postgresql:
+    parameters:
+      shared_buffers: "8GB"
+      max_connections: "500"
+      wal_keep_size: "4GB"
+
+  # High availability & scheduling
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: cnpg.io/cluster
+                operator: In
+                values:
+                  - customer-postgres
+          topologyKey: kubernetes.io/hostname

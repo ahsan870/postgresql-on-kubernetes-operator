@@ -1,0 +1,151 @@
+# ----------------------------
+# ConfigMap (non-sensitive config)
+# ----------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: database
+data:
+  POSTGRES_DB: dvr_metadata
+  POSTGRES_PORT: "5432"
+  RETENTION_DAYS: "30"
+
+---
+# ----------------------------
+# Secret (sensitive values)
+# ----------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: database
+type: Opaque
+data:
+  POSTGRES_USER: cG9zdGdyZXM=        # postgres
+  POSTGRES_PASSWORD: cG9zdGdyZXNfcGFzcw==  # postgres_pass
+
+---
+# ----------------------------
+# Persistent Volume Claim
+# ----------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: fast-ssd
+  resources:
+    requests:
+      storage: 3Ti
+
+---
+# ----------------------------
+# Service (stable networking)
+# ----------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+---
+# ----------------------------
+# StatefulSet (PostgreSQL)
+# ----------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef:
+                name: postgres-config
+            - secretRef:
+                name: postgres-secret
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "2"
+              memory: "8Gi"
+            limits:
+              cpu: "4"
+              memory: "16Gi"
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 30
+            periodSeconds: 20
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+
+---
+# ----------------------------
+# CronJob (daily metadata cleanup)
+# ----------------------------
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-cleanup
+  namespace: database
+spec:
+  schedule: "0 2 * * *"   # daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cleanup
+              image: postgres:15
+              envFrom:
+                - secretRef:
+                    name: postgres-secret
+                - configMapRef:
+                    name: postgres-config
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  psql -h postgres -U $POSTGRES_USER -d $POSTGRES_DB <<EOF
+                  DELETE FROM video_metadata
+                  WHERE expires_at < now();
+                  EOF
