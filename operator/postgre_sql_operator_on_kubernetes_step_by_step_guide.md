@@ -323,6 +323,43 @@ No manual action required.
 - **Alerting**: Alertmanager with SLO-based alerts (replication lag, disk, WAL)
 - **SQL insights**: `pg_stat_statements`, slow query logs, and `auto_explain`
 
+### 15.1 Deploy Grafana + Prometheus (Basic)
+
+Apply the manifests in the `operator/` folder:
+
+```bash
+kubectl apply -f operator/monitoring-namespace.yaml
+kubectl apply -f operator/prometheus.yaml
+kubectl apply -f operator/grafana.yaml
+kubectl apply -f operator/alertmanager.yaml
+kubectl apply -f operator/loki.yaml
+kubectl apply -f operator/promtail.yaml
+kubectl apply -f operator/monitoring-networkpolicy.yaml
+```
+
+> The Prometheus config includes a basic scrape for CNPG pods on port `9187`.
+> If your CNPG metrics port differs, update `operator/prometheus.yaml`.
+
+### 15.2 Access Grafana (Internal Only)
+
+Keep Grafana private and use port-forward from the corporate network:
+
+```bash
+kubectl port-forward -n monitoring svc/grafana 3000:3000
+```
+
+Login:
+- **URL**: `http://localhost:3000`
+- **User/Password**: from `grafana-admin` Secret (change the default)
+
+### 15.3 Production Notes
+
+- Grafana and Prometheus now use **PVCs** for persistence
+- Replace default Grafana admin credentials with a vault-synced Secret
+- Configure Alertmanager receivers (email/Slack/PagerDuty)
+- Loki uses local disk for retention; use object storage in production
+- Consider the **kube-prometheus-stack** Helm chart for full dashboards and alerts
+
 ---
 
 ## 16. Validate the Database with `psql`
